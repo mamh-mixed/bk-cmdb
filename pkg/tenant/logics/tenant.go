@@ -23,6 +23,7 @@ import (
 
 	"configcenter/pkg/tenant"
 	"configcenter/src/apimachinery"
+	"configcenter/src/common"
 	"configcenter/src/common/blog"
 	"configcenter/src/common/types"
 )
@@ -48,4 +49,17 @@ func InitTenant(apiMachineryCli apimachinery.ClientSetInterface) error {
 		return err
 	}
 	return nil
+}
+
+// ValidatePlatformTenantMode validate platform multi-tenant mode
+func ValidatePlatformTenantMode(tenantID string, enableTenantMode bool) bool {
+	if enableTenantMode && tenantID == common.BKDefaultTenantID {
+		return true
+	}
+
+	if !enableTenantMode && tenantID == common.BKSingleTenantID {
+		return true
+	}
+
+	return false
 }
