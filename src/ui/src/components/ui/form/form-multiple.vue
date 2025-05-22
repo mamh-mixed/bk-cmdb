@@ -315,6 +315,11 @@
 </script>
 
 <style lang="scss" scoped>
+    .cmdb-organization {
+      :deep(.bk-org-selector-button) {
+        width: 100%;
+      }
+    }
     .form-layout {
         height: 100%;
         @include scrollbar;

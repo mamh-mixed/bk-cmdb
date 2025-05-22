@@ -13,21 +13,34 @@
 <template>
   <div class="search-value-container" v-if="displayType === 'info'">
     <div class="prepend"><slot name="info-prepend"></slot></div>
-    <org-value :property="property" :value="localValue" show-on="search"></org-value>
+    <org-value :property="property" :value="organizationVal" show-on="search"></org-value>
   </div>
-  <cmdb-form-organization
-    v-else
-    v-model="localValue"
-    v-bind="$attrs"
-    :multiple="multiple"
-    @clear="() => $emit('clear')"
-    @toggle="handleToggle">
-  </cmdb-form-organization>
+  <div v-else>
+    <bk-tag-input
+      v-model="tagInputVal"
+      ref="tagInput"
+      placeholder="点击选择组织"
+      :collapse-tags="true"
+      :allow-create="true"
+      @focus="handleFocus"
+      @removeAll="handleDelete">
+    </bk-tag-input>
+    <cmdb-form-organization
+      :hidden="true"
+      ref="organization"
+      v-model="organizationVal"
+      v-bind="$attrs"
+      @confirm="handleOrganizationConfirm">
+    </cmdb-form-organization>
+  </div>
+
 </template>
 
 <script>
   import activeMixin from './mixins/active'
   import orgValue from '@/components/ui/other/org-value.vue'
+  import { parseOrgVal } from '@/utils/tools'
+  import store from '@/store'
 
   export default {
     name: 'cmdb-search-organization',
@@ -56,24 +69,52 @@
         }
       }
     },
-    computed: {
-      localValue: {
-        get() {
-          if (this.multiple) {
-            if (this.value && !Array.isArray(this.value)) {
-              return [this.value]
-            }
-            return this.value || []
+    data() {
+      return {
+        organizationVal: [], // 组织选择器回显的值 格式[{ type: 'org', id: 1 }]
+        tagInputVal: [] // tagInput显示的值 格式['xxx', 'xxx']
+      }
+    },
+    watch: {
+      value: {
+        async handler(val) {
+          if (!val?.[0]) {
+            this.tagInputVal = []
+            return
           }
-          if (Array.isArray(this.value)) {
-            return this.value[0] || ''
-          }
-          return this.value || ''
+          const value = val.join(',')
+          const res = await store.dispatch('organization/getDepartment', value)
+          this.tagInputVal = res?.map(item => parseOrgVal(item)) ?? []
+          this.organizationVal = this.setOrganizationVal(val)
         },
-        set(value) {
-          this.$emit('input', value)
-          this.$emit('change', value)
+        immediate: true
+      }
+    },
+    methods: {
+      setOrganizationVal(value) {
+        if (value && !Array.isArray(value)) {
+          return [{ id: value, type: 'org' }]
         }
+        if (!value) {
+          return []
+        }
+        return value.map(item => ({ id: item, type: 'org' })) || []
+      },
+      handleFocus() {
+        this.$refs.organization?.$children[0]?.openEdit()
+        this.$refs.tagInput.$refs.input.blur()
+      },
+      handleDelete() {
+        this.emitValue([])
+      },
+      handleOrganizationConfirm(val) {
+        const value = val[0]?.data?.map(item => item.id) ?? []
+        this.emitValue(value)
+      },
+      emitValue(value) {
+        this.$emit('input', value)
+        this.$emit('change', value)
+        this.$emit('confirm')
       }
     }
   }
