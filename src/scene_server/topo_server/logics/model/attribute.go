@@ -39,11 +39,13 @@ import (
 type AttributeOperationInterface interface {
 	CreateObjectAttribute(kit *rest.Kit, data *metadata.Attribute) (*metadata.Attribute, error)
 	BatchCreateObjectAttr(kit *rest.Kit, objID string, attrs []*metadata.Attribute, fromTemplate bool) error
-	CreateTableObjectAttribute(kit *rest.Kit, data *metadata.Attribute) (*metadata.Attribute, error)
+	CreateTableObjectAttribute(kit *rest.Kit, data *metadata.Attribute, tableObjUUID string) (*metadata.Attribute,
+		error)
 	DeleteObjectAttribute(kit *rest.Kit, attrItems []metadata.Attribute) error
 	UpdateObjectAttribute(kit *rest.Kit, data mapstr.MapStr, attID int64, modelBizID int64, isSync bool) error
 	// CreateObjectBatch upsert object attributes
-	CreateObjectBatch(kit *rest.Kit, data map[string]metadata.ImportObjectData) (mapstr.MapStr, error)
+	CreateObjectBatch(kit *rest.Kit, data map[string]metadata.ImportObjectData,
+		tableObjUUIDMap map[string]string) (mapstr.MapStr, error)
 	UpdateTableObjectAttr(kit *rest.Kit, data mapstr.MapStr, attID int64, modelBizID int64) error
 	// FindObjectBatch find object to attributes mapping
 	FindObjectBatch(kit *rest.Kit, objIDs []string) (mapstr.MapStr, error)
@@ -613,7 +615,8 @@ func (a *attribute) validCreateTableAttribute(kit *rest.Kit, data *metadata.Attr
 	return nil
 }
 
-func (a *attribute) createTableModelAndAttributeGroup(kit *rest.Kit, data *metadata.Attribute) error {
+func (a *attribute) createTableModelAndAttributeGroup(kit *rest.Kit, data *metadata.Attribute,
+	tableObjUUID string) error {
 
 	t := metadata.Now()
 	obj := metadata.Object{
@@ -626,6 +629,7 @@ func (a *attribute) createTableModelAndAttributeGroup(kit *rest.Kit, data *metad
 		Modifier:   string(metadata.FromCCSystem),
 		CreateTime: &t,
 		LastTime:   &t,
+		UUID:       tableObjUUID,
 	}
 
 	objRsp, err := a.clientSet.CoreService().Model().CreateTableModel(kit.Ctx, kit.Header,
@@ -671,7 +675,9 @@ func (a *attribute) createTableModelAndAttributeGroup(kit *rest.Kit, data *metad
 }
 
 // CreateTableObjectAttribute create internal form fields in a separate process
-func (a *attribute) CreateTableObjectAttribute(kit *rest.Kit, data *metadata.Attribute) (*metadata.Attribute, error) {
+func (a *attribute) CreateTableObjectAttribute(kit *rest.Kit, data *metadata.Attribute, tableObjUUID string) (
+	*metadata.Attribute, error) {
+
 	if data.IsOnly {
 		data.IsRequired = true
 	}
@@ -688,7 +694,7 @@ func (a *attribute) CreateTableObjectAttribute(kit *rest.Kit, data *metadata.Att
 		return nil, err
 	}
 
-	if err := a.createTableModelAndAttributeGroup(kit, data); err != nil {
+	if err := a.createTableModelAndAttributeGroup(kit, data, tableObjUUID); err != nil {
 		return nil, err
 	}
 
@@ -1594,8 +1600,8 @@ const (
 
 // CreateObjectBatch this method doesn't act as it's name, it create or update model's attributes indeed.
 // it only operate on model already exist, that is to say no new model will be created.
-func (a *attribute) CreateObjectBatch(kit *rest.Kit, inputDataMap map[string]metadata.ImportObjectData) (mapstr.MapStr,
-	error) {
+func (a *attribute) CreateObjectBatch(kit *rest.Kit, inputDataMap map[string]metadata.ImportObjectData,
+	tableObjUUIDMap map[string]string) (mapstr.MapStr, error) {
 
 	result := mapstr.New()
 	hasError := false
@@ -1650,7 +1656,7 @@ func (a *attribute) CreateObjectBatch(kit *rest.Kit, inputDataMap map[string]met
 		}
 
 		// upsert the object's attribute
-		result[objID], hasError = a.upsertObjectAttrBatch(kit, objID, inputData.Attr, grpNameIDMap)
+		result[objID], hasError = a.upsertObjectAttrBatch(kit, objID, inputData.Attr, grpNameIDMap, tableObjUUIDMap)
 	}
 
 	if hasError {
@@ -1660,7 +1666,7 @@ func (a *attribute) CreateObjectBatch(kit *rest.Kit, inputDataMap map[string]met
 }
 
 func (a *attribute) upsertObjectAttrBatch(kit *rest.Kit, objID string, attributes map[int64]metadata.Attribute,
-	grpNameIDMap map[string]string) (createObjectBatchObjResult, bool) {
+	grpNameIDMap, tableObjUUIDMap map[string]string) (createObjectBatchObjResult, bool) {
 
 	objRes := createObjectBatchObjResult{}
 	hasError := false
@@ -1709,7 +1715,7 @@ func (a *attribute) upsertObjectAttrBatch(kit *rest.Kit, objID string, attribute
 			attr.PropertyGroup = NewGroupID(true)
 		}
 
-		if result, err := a.upsertObjectAttr(kit, objID, &attr); err != nil {
+		if result, err := a.upsertObjectAttr(kit, objID, &attr, tableObjUUIDMap); err != nil {
 			switch result {
 			case undefinedFail:
 				objRes.Errors = append(objRes.Errors, rowInfo{Row: idx, Info: err.Error(), PropID: propID})
@@ -1728,28 +1734,26 @@ func (a *attribute) upsertObjectAttrBatch(kit *rest.Kit, objID string, attribute
 	return objRes, hasError
 }
 
-func (a *attribute) upsertObjectAttr(kit *rest.Kit, objID string, attr *metadata.Attribute) (upsertResult, error) {
-	// check if attribute exists, if exists, update these attributes, otherwise, create the attribute
-	cond := mapstr.MapStr{metadata.AttributeFieldObjectID: objID, metadata.AttributeFieldPropertyID: attr.PropertyID}
-	util.AddModelBizIDCondition(cond, attr.BizID)
-	queryCond := &metadata.QueryCondition{Condition: cond}
-	result, err := a.clientSet.CoreService().Model().ReadModelAttrsWithTableByCondition(kit.Ctx, kit.Header, attr.BizID,
-		queryCond)
-	if err != nil {
-		blog.Errorf("find attribute failed, err: %v, cond: %#v, rid: %s", err, queryCond, kit.Rid)
-		return undefinedFail, err
-	}
+func (a *attribute) upsertObjectAttr(kit *rest.Kit, objID string, attr *metadata.Attribute,
+	tableObjUUIDMap map[string]string) (upsertResult, error) {
 
-	if len(result.Info) == 0 {
-		// create attribute
-		if attr.PropertyType == common.FieldTypeInnerTable {
-			if _, err := a.CreateTableObjectAttribute(kit, attr); err != nil {
+	if attr.PropertyType == common.FieldTypeInnerTable {
+		uniqueKey := GetUniqueTableObjKey(objID, attr.PropertyID, attr.BizID)
+		if tableObjUUID, exist := tableObjUUIDMap[uniqueKey]; exist {
+			if _, err := a.CreateTableObjectAttribute(kit, attr, tableObjUUID); err != nil {
 				blog.Errorf("create attribute(%#v) failed, ObjID: %s, err: %v, rid: %s", attr, objID, err, kit.Rid)
 				return insertFail, err
 			}
 			return success, nil
 		}
+	}
 
+	result, err := SearchAttrInfo(kit, a.clientSet, objID, []metadata.Attribute{*attr})
+	if err != nil {
+		return undefinedFail, err
+	}
+
+	if len(result.Info) == 0 {
 		createAttrOpt := &metadata.CreateModelAttributes{Attributes: []metadata.Attribute{*attr}}
 		_, err := a.clientSet.CoreService().Model().CreateModelAttrs(kit.Ctx, kit.Header, objID, createAttrOpt)
 		if err != nil {
@@ -1777,6 +1781,7 @@ func (a *attribute) upsertObjectAttr(kit *rest.Kit, objID string, attr *metadata
 	updateData.Remove(metadata.AttributeFieldPropertyID)
 	updateData.Remove(metadata.AttributeFieldObjectID)
 	updateData.Remove(metadata.AttributeFieldID)
+	cond := mapstr.MapStr{metadata.AttributeFieldObjectID: objID, metadata.AttributeFieldPropertyID: attr.PropertyID}
 	updateAttrOpt := metadata.UpdateOption{Condition: cond, Data: updateData}
 	_, err = a.clientSet.CoreService().Model().UpdateModelAttrs(kit.Ctx, kit.Header, objID, &updateAttrOpt)
 	if err != nil {
@@ -1844,4 +1849,41 @@ func (a *attribute) FindObjectBatch(kit *rest.Kit, objIDs []string) (mapstr.MapS
 	}
 
 	return result, nil
+}
+
+// SearchAttrInfo search attribute info
+func SearchAttrInfo(kit *rest.Kit, clientSet apimachinery.ClientSetInterface, objID string,
+	attr []metadata.Attribute) (*metadata.QueryModelAttributeDataResult, error) {
+
+	if len(attr) == 0 {
+		blog.Errorf("attr is empty, rid: %s", kit.Rid)
+		return nil, fmt.Errorf("attr is empty")
+	}
+
+	attrIds := make([]string, 0)
+	for _, item := range attr {
+		attrIds = append(attrIds, item.PropertyID)
+	}
+
+	// check if attribute exists, if exists, update these attributes, otherwise, create the attribute
+	cond := mapstr.MapStr{
+		metadata.AttributeFieldObjectID: objID,
+		metadata.AttributeFieldPropertyID: mapstr.MapStr{
+			common.BKDBIN: attrIds},
+	}
+	util.AddModelBizIDCondition(cond, attr[0].BizID)
+	queryCond := &metadata.QueryCondition{Condition: cond}
+	result, err := clientSet.CoreService().Model().ReadModelAttrsWithTableByCondition(kit.Ctx, kit.Header,
+		attr[0].BizID, queryCond)
+	if err != nil {
+		blog.Errorf("find attribute failed, err: %v, cond: %#v, rid: %s", err, queryCond, kit.Rid)
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// GetUniqueTableObjKey get unique table object key
+func GetUniqueTableObjKey(objID, propertyID string, bizID int64) string {
+	return objID + "*" + propertyID + "*" + fmt.Sprintf("%d", bizID)
 }

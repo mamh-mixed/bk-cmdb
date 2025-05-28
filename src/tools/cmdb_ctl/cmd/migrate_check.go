@@ -173,7 +173,7 @@ func (s *migrateCheckService) checkUnique() error {
 				fmt.Printf("WARNING: not must check object(%s) unique(%d) will not be supported\n", objID, unique.ID)
 			}
 
-			if err := s.checkObjectUnique(ctx, objID, unique.TenantID, unique, attrMap); err != nil {
+			if err := s.checkObjectUnique(ctx, objID, unique, attrMap); err != nil {
 				return err
 			}
 		}
@@ -252,8 +252,8 @@ func (s *migrateCheckService) getObjAttrMap(ctx context.Context, objID string) (
 	return attrMap, nil
 }
 
-func (s *migrateCheckService) checkObjectUnique(ctx context.Context, objID, tenantID string,
-	unique ObjectUnique, attrMap map[int64]metadata.Attribute) error {
+func (s *migrateCheckService) checkObjectUnique(ctx context.Context, objID string, unique ObjectUnique,
+	attrMap map[int64]metadata.Attribute) error {
 
 	// check if all unique keys are valid
 	uniqueFields := make([]metadata.Attribute, 0)
@@ -327,7 +327,7 @@ func (s *migrateCheckService) checkObjectUnique(ctx context.Context, objID, tena
 
 	var tableName string
 	if common.IsInnerModel(objID) {
-		tableName = common.GetInstTableName(objID, tenantID)
+		tableName = common.GetInnerInstTableName(objID)
 	} else {
 		tableName = common.BKTableNameBaseInst
 	}
