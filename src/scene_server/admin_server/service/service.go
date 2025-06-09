@@ -19,6 +19,7 @@ import (
 
 	"configcenter/src/ac/iam"
 	"configcenter/src/common"
+	"configcenter/src/common/auth"
 	"configcenter/src/common/backbone"
 	cc "configcenter/src/common/backbone/configcenter"
 	"configcenter/src/common/blog"
@@ -200,12 +201,13 @@ func (s *Service) MonitorHealth(req *restful.Request, resp *restful.Response) {
 func (s *Service) InitClients() error {
 
 	var clients []apigw.ClientType
-	if s.Config.EnableMultiTenantMode && !s.Config.DisableVerifyTenant {
-		clients = []apigw.ClientType{apigw.User}
-	}
 
 	if s.Config.SnapDataID > 0 {
 		clients = append(clients, apigw.Gse)
+	}
+
+	if auth.EnableAuthorize() {
+		clients = append(clients, apigw.Iam)
 	}
 
 	if len(clients) > 0 {
