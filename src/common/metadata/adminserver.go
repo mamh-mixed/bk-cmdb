@@ -32,3 +32,15 @@ type ReponseSysUserConfig struct {
 
 // CCSystemUserConfigSwitch TODO
 const CCSystemUserConfigSwitch = "user_config_switch"
+
+// DataIDInfo is data id info
+type DataIDInfo struct {
+	// HostSnap is tenant_id to data_id map
+	HostSnap map[string]int64 `bson:"host_snap"`
+}
+
+// DataIDResp is data id response
+type DataIDResp struct {
+	BaseResp `json:",inline"`
+	Data     int64 `json:"data"`
+}

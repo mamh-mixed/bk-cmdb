@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"configcenter/pkg/tenant/logics"
 	"configcenter/src/ac/extensions"
 	"configcenter/src/ac/iam"
 	"configcenter/src/common/auth"
@@ -214,6 +215,11 @@ func (es *EventServer) initModules() error {
 		es.service.AuthManager = extensions.NewAuthManager(es.engine.CoreAPI)
 	} else {
 		blog.Infof("disable auth center access")
+	}
+
+	// initialize tenant manager
+	if err = logics.InitTenant(es.engine.CoreAPI); err != nil {
+		return err
 	}
 
 	return nil
