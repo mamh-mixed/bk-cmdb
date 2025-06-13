@@ -846,6 +846,22 @@ type CloudAreaHostCountResult struct {
 	Data     []CloudAreaHostCountElem `json:"data"`
 }
 
+// DelRedundantDefaultAreaHostsOption remove redundant default area hosts option
+type DelRedundantDefaultAreaHostsOption struct {
+	Hosts  []DefaultAreaHost               `json:"hosts"`
+	OpType DelDefaultAreaHostOperationType `json:"type"`
+}
+
+// DelDefaultAreaHostOperationType operation type for delete redundant default area hosts
+type DelDefaultAreaHostOperationType string
+
+const (
+	// OperationByIP operation default area hosts by ip
+	OperationByIP DelDefaultAreaHostOperationType = "ip"
+	// OperationByHostID operation default area hosts by hostID
+	OperationByHostID DelDefaultAreaHostOperationType = "host_id"
+)
+
 // CloudAreaHostCountElem TODO
 type CloudAreaHostCountElem struct {
 	CloudID   int64 `json:"bk_cloud_id"`

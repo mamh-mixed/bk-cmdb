@@ -21,6 +21,7 @@ import (
 	"configcenter/src/common/auditlog"
 	"configcenter/src/common/auth"
 	"configcenter/src/common/blog"
+	"configcenter/src/common/errors"
 	httpheader "configcenter/src/common/http/header"
 	"configcenter/src/common/http/rest"
 	"configcenter/src/common/mapstr"
@@ -486,12 +487,107 @@ func (s *Service) UpdateHostCloudAreaField(ctx *rest.Contexts) {
 	})
 
 	if txnErr != nil {
-		ctx.RespAutoError(txnErr)
-		return
+		err, isOk := txnErr.(errors.CCErrorCoder)
+		if !isOk || err.GetCode() != common.CCErrCommDuplicateItem {
+			ctx.RespAutoError(txnErr)
+			return
+		}
+
+		newKit := ctx.Kit.NewKit()
+		if err := s.RemoveRedundantHostByIDs(newKit, input.HostIDs); err != nil {
+			blog.Errorf("remove redundant host failed, err: %v, hostIDs: %+v, rid: %s", err, input.HostIDs, rid)
+			ctx.RespAutoError(err)
+			return
+		}
+
+		// retry change host cloud area
+		txnErr = s.Engine.CoreAPI.CoreService().Txn().AutoRunTxn(newKit.Ctx, newKit.Header, func() error {
+			ccErr := s.CoreAPI.CoreService().Host().UpdateHostCloudAreaField(newKit.Ctx, newKit.Header, input)
+			if ccErr != nil {
+				blog.Errorf("update host cloud area failed, input: %s, err: %v, rid: %s", input, ccErr, rid)
+				return ccErr
+			}
+			return nil
+		})
+		if txnErr != nil {
+			ctx.RespAutoError(txnErr)
+			return
+		}
 	}
 
 	// response success
 	ctx.RespEntity(nil)
+}
+
+// RemoveRedundantHostByIDs remove host by hostId which not exist in host table
+func (s *Service) RemoveRedundantHostByIDs(kit *rest.Kit, hostIds []int64) error {
+
+	hostSearchResults := make([]mapstr.MapStr, 0)
+	for start := 0; start < len(hostIds); start += common.BKMaxLimitSize {
+		var paged []int64
+		if len(hostIds)-start >= common.BKMaxLimitSize {
+			paged = hostIds[start : start+common.BKMaxLimitSize]
+		} else {
+			paged = hostIds[start:len(hostIds)]
+		}
+
+		hostCond := map[string]interface{}{
+			common.BKHostIDField: map[string]interface{}{
+				common.BKDBIN: paged,
+			},
+		}
+		hostResult, err := s.Logic.GetHostInfoByConds(kit, hostCond)
+		if err != nil {
+			blog.Errorf("get host info failed, err: %v, rid: %s", err, kit.Rid)
+			return err
+		}
+		hostSearchResults = append(hostSearchResults, hostResult...)
+	}
+
+	hosts := make([]meta.DefaultAreaHost, 0)
+	for _, item := range hostSearchResults {
+		host := meta.DefaultAreaHost{}
+		ip, isIPExist := item[common.BKHostInnerIPField].(string)
+
+		ipv6, isIPV6Exist := item[common.BKHostInnerIPv6Field].(string)
+
+		if !isIPExist && !isIPV6Exist {
+			blog.Errorf("invalid default area host, ip and ipv6 is not exist, rid: %s", kit.Rid)
+			return kit.CCError.CCErrorf(common.CCErrCommParamsInvalid, "bk_host_innerip")
+		}
+		if len(ip) != 0 {
+			ipArr, err := meta.ConvHostSpecialStrFieldToArray(common.BKHostInnerIPField, ip)
+			if err != nil {
+				blog.Errorf("host inner ip is invalid for array, err: %v, rid: %s", err, kit.Rid)
+				return err
+			}
+
+			host.InnerIP = ipArr
+		}
+		if len(ipv6) != 0 {
+			ipV6Arr, err := meta.ConvHostSpecialStrFieldToArray(common.BKHostInnerIPv6Field, ipv6)
+			if err != nil {
+				blog.Errorf("host inner ipV6 is invalid for array, err: %v, rid: %s", err, kit.Rid)
+				return err
+			}
+
+			host.InnerIPv6 = ipV6Arr
+		}
+		host.TenantID = kit.TenantID
+		hosts = append(hosts, host)
+	}
+
+	defaultAreaHostOption := &metadata.DelRedundantDefaultAreaHostsOption{
+		Hosts:  hosts,
+		OpType: metadata.OperationByIP,
+	}
+	err := s.CoreAPI.CoreService().Host().DelRedundantDefaultAreaHosts(kit.Ctx, kit.Header, defaultAreaHostOption)
+	if err != nil {
+		blog.Errorf("remove default area host failed, err: %v, hosts: %+v, rid: %s", err, hosts, kit.Rid)
+		return err
+	}
+
+	return nil
 }
 
 // FindCloudAreaHostCount find host count in every cloudarea
