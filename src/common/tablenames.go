@@ -299,7 +299,6 @@ var platformTableWithTenantMap = map[string]struct{}{
 	BKTableNameAPITaskSyncHistory: {},
 	BKTableNameFullSyncCond:       {},
 	BKTableNameCacheWatchToken:    {},
-	"SrcSyncDataToken":            {},
 	"SrcSyncDataCursor":           {},
 	BKTableNameGlobalConfig:       {},
 }
