@@ -359,8 +359,9 @@ func (s *service) authorizeReq(req *restful.Request, user meta.UserInfo, resourc
 
 	s.noPermissionRequestTotal.With(
 		prometheus.Labels{
-			metrics.LabelHandler: path,
-			metrics.LabelAppCode: httpheader.GetAppCode(req.Request.Header),
+			metrics.LabelHandler:  path,
+			metrics.LabelAppCode:  httpheader.GetAppCode(req.Request.Header),
+			metrics.LabelTenantId: httpheader.GetTenantID(req.Request.Header),
 		},
 	).Inc()
 
@@ -431,8 +432,9 @@ func (s *service) LimiterFilter() func(req *restful.Request, resp *restful.Respo
 			blog.Errorf("too many requests, matched rule is %#v, rid: %s", *rule, rid)
 
 			s.errorLimiterTotal.With(prometheus.Labels{
-				metrics.LabelAppCode: httpheader.GetAppCode(req.Request.Header),
-				metrics.LabelHandler: req.Request.RequestURI,
+				metrics.LabelAppCode:  httpheader.GetAppCode(req.Request.Header),
+				metrics.LabelHandler:  req.Request.RequestURI,
+				metrics.LabelTenantId: httpheader.GetTenantID(req.Request.Header),
 			}).Inc()
 
 			rsp := metadata.BaseResp{
@@ -463,8 +465,9 @@ func (s *service) LimiterFilter() func(req *restful.Request, resp *restful.Respo
 			blog.Errorf("too many requests, matched rule is %#v, rid: %s", *rule, rid)
 
 			s.errorLimiterTotal.With(prometheus.Labels{
-				metrics.LabelAppCode: httpheader.GetAppCode(req.Request.Header),
-				metrics.LabelHandler: req.Request.RequestURI,
+				metrics.LabelAppCode:  httpheader.GetAppCode(req.Request.Header),
+				metrics.LabelHandler:  req.Request.RequestURI,
+				metrics.LabelTenantId: httpheader.GetTenantID(req.Request.Header),
 			}).Inc()
 
 			rsp := metadata.BaseResp{
