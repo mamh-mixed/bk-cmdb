@@ -1,4 +1,4 @@
-<!--
+/*
  * Tencent is pleased to support the open source community by making 蓝鲸 available.
  * Copyright (C) 2017-2022 THL A29 Limited, a Tencent company. All rights reserved.
  * Licensed under the MIT License (the "License"); you may not use this file except
@@ -8,33 +8,18 @@
  * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
  * either express or implied. See the License for the specific language governing permissions and
  * limitations under the License.
--->
+ */
 
-<template>
-  <bk-user-display-name ref="userDisplayName" :user-id="localValue"></bk-user-display-name>
-</template>
+import http from '@/api'
 
-<script>
-  export default {
-    name: 'cmdb-user-value',
-    props: {
-      value: {
-        type: [String, Array],
-        default: ''
-      }
-    },
-    data() {
-      return {}
-    },
-    computed: {
-      localValue() {
-        return this.value || ''
-      }
-    },
-    methods: {
-      getCopyValue() {
-        return this.$refs?.userDisplayName?.textContent
-      }
-    }
+export const getBiz = async () => {
+  try {
+    const result = await http.post('find/resource_pool/biz', {}, { fromCache: true })
+    return result
+  } catch (error) {
+    console.error(error)
   }
-</script>
+}
+export default {
+  getBiz
+}
