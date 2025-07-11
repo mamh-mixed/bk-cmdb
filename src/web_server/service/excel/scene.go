@@ -1,8 +1,7 @@
 /*
  * Tencent is pleased to support the open source community by making
  * 蓝鲸智云 - 配置平台 (BlueKing - Configuration System) available.
- * Copyright (C) 2017 THL A29 Limited,
- * a Tencent company. All rights reserved.
+ * Copyright (C) 2017 Tencent. All rights reserved.
  * Licensed under the MIT License (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://opensource.org/licenses/MIT
@@ -23,13 +22,14 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"configcenter/src/common"
 	"configcenter/src/common/blog"
-	httpheader "configcenter/src/common/http/header"
 	"configcenter/src/common/errors"
+	httpheader "configcenter/src/common/http/header"
 	"configcenter/src/common/http/rest"
 	"configcenter/src/common/metadata"
 	webCommon "configcenter/src/web_server/common"
@@ -86,7 +86,13 @@ func (s *service) BuildTemplate(c *gin.Context) {
 	// 1. 创建excel模版
 	dir := fmt.Sprintf("%s/template", webCommon.ResourcePath)
 	randNum := rand.Uint32()
-	filePath := fmt.Sprintf("%s/%stemplate-%d-%d.xlsx", dir, objID, time.Now().UnixNano(), randNum)
+	fileName := fmt.Sprintf("%stemplate-%d-%d.xlsx", objID, time.Now().UnixNano(), randNum)
+	filePath, err := filepath.Abs(filepath.Join(dir, fileName))
+	if err != nil || !strings.HasPrefix(filePath, dir) {
+		blog.Errorf("validate file path %s failed, err: %v, rid: %s", filePath, err, kit.Rid)
+		c.JSON(http.StatusOK, metadata.BaseResp{Code: common.CCErrCommExcelTemplateFailed, ErrMsg: "invalid file name"})
+		return
+	}
 
 	client := &core.Client{ApiClient: s.apiCli}
 	baseOp, err := operator.NewBaseOp(operator.FilePath(filePath), operator.Client(client), operator.ObjID(objID),
@@ -336,7 +342,12 @@ func (s *service) ExportObject(c *gin.Context) {
 	objID := c.Param(common.BKObjIDField)
 
 	dir := fmt.Sprintf("%s/export", webCommon.ResourcePath)
-	filePath := fmt.Sprintf("%s/%d_%s.xlsx", dir, time.Now().UnixNano(), objID)
+	filePath, err := filepath.Abs(filepath.Join(dir, fmt.Sprintf("%d_%s.xlsx", time.Now().UnixNano(), objID)))
+	if err != nil || !strings.HasPrefix(filePath, dir) {
+		blog.Errorf("validate file path %s failed, err: %v, rid: %s", filePath, err, kit.Rid)
+		c.JSON(http.StatusOK, metadata.BaseResp{Code: common.CCErrCommExcelTemplateFailed, ErrMsg: "invalid file name"})
+		return
+	}
 
 	client := &core.Client{ApiClient: s.apiCli}
 	baseOp, err := operator.NewBaseOp(operator.FilePath(filePath), operator.Client(client), operator.ObjID(objID),
