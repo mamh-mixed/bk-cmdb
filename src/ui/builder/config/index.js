@@ -1,6 +1,6 @@
 /*
  * Tencent is pleased to support the open source community by making 蓝鲸 available.
- * Copyright (C) 2017-2022 THL A29 Limited, a Tencent company. All rights reserved.
+ * Copyright (C) 2017 Tencent. All rights reserved.
  * Licensed under the MIT License (the "License"); you may not use this file except
  * in compliance with the License. You may obtain a copy of the License at
  * http://opensource.org/licenses/MIT
@@ -57,8 +57,9 @@ const dev = {
   // Paths
   assetsSubDirectory: '',
   assetsPublicPath: '/static/',
-  proxyTable: {
-    '/proxy': {
+  proxyTable: [
+    {
+      context: ['/proxy'],
       logLevel: 'info',
       changeOrigin: true,
       target: 'http://{webserver地址}/',
@@ -66,7 +67,7 @@ const dev = {
         '^/proxy': ''
       }
     }
-  },
+  ],
   // Various Dev Server settings
   host: 'localhost', // can be overwritten by process.env.HOST
   port: 9090, // can be overwritten by process.env.PORT, if port is in use, a free one will be determined
@@ -115,17 +116,20 @@ if (argv.mock) {
   // 将所有请求修改为/mock下
   dev.config.API_URL = dev.config.API_URL.replace('/proxy/', '/mock/')
 
+  const defaultProxy = dev.proxyTable.find(item => item.context.includes('/proxy'))
+
   // 当devserver中的/mock未匹配时会使用此代理，此代理将/mock的请求代理回默认的/proxy
-  dev.proxyTable['/mock'] = {
+  dev.proxyTable.push({
     // 使用默认proxy配置
-    ...dev.proxyTable['/proxy'],
+    ...defaultProxy,
+    context: ['/mock'],
     // 此时地址都是/mock前缀，同样需要重写为''
     pathRewrite: {
       '^/mock': ''
     },
     // fix proxied POST requests when bodyParser is applied before this middleware
     onProxyReq: fixRequestBody
-  }
+  })
 
   dev.useMock = true
 }
